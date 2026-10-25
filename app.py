@@ -1,6 +1,7 @@
 import csv
 import io
 import streamlit as st
+from pregame_feed import upcoming_games
 from engine import market_probability, implied_probability, expected_value, devig_two_way
 
 st.set_page_config(page_title='EDGE AI | Probability Lab', page_icon='📈', layout='wide')
@@ -8,7 +9,23 @@ st.title('EDGE AI — Probability Lab')
 st.caption('v0.1 | Transparent statistical baseline • NOT trained, calibrated, or validated • No live odds feed')
 st.warning('Model probabilities depend entirely on the mean and uncertainty you supply. Positive EV is not a verified betting edge until projections are validated on unseen games.')
 
-tab1, tab2, tab3 = st.tabs(['Single-market calculator','Multi-book CSV scanner','Model roadmap'])
+tab0, tab1, tab2, tab3 = st.tabs(['Upcoming games (automatic)','Single-market calculator','Multi-book CSV scanner','Model roadmap'])
+with tab0:
+    st.subheader('Automatic pregame schedule')
+    st.info('This is the first data-automation milestone: upcoming games only. Player prop predictions are NOT generated yet. This public feed may change or be unavailable.')
+    selected = st.selectbox('League', ['NFL','NBA','MLB'], key='auto_sport')
+    @st.cache_data(ttl=900, show_spinner=False)
+    def get_schedule(league):
+        return upcoming_games(league)
+    try:
+        schedule = get_schedule(selected)
+        if schedule:
+            st.dataframe(schedule, use_container_width=True, hide_index=True)
+        else:
+            st.info('No upcoming games found in the next seven days.')
+        st.caption('Schedule cache refreshes every 15 minutes while the app is running. No sportsbook odds or player projections are connected.')
+    except Exception as exc:
+        st.error(f'Unable to retrieve schedule: {exc}')
 with tab1:
     c1,c2,c3=st.columns(3)
     sport=c1.selectbox('Sport',['NBA','NFL','MLB','Other'])
