@@ -2,6 +2,7 @@ import csv
 import io
 import streamlit as st
 from pregame_feed import upcoming_games
+from player_projections import projections
 from engine import market_probability, implied_probability, expected_value, devig_two_way
 
 st.set_page_config(page_title='EDGE AI | Probability Lab', page_icon='📈', layout='wide')
@@ -9,7 +10,27 @@ st.title('EDGE AI — Probability Lab')
 st.caption('v0.1 | Transparent statistical baseline • NOT trained, calibrated, or validated • No live odds feed')
 st.warning('Model probabilities depend entirely on the mean and uncertainty you supply. Positive EV is not a verified betting edge until projections are validated on unseen games.')
 
-tab0, tab1, tab2, tab3 = st.tabs(['Upcoming games (automatic)','Single-market calculator','Multi-book CSV scanner','Model roadmap'])
+tabp, tab0, tab1, tab2, tab3 = st.tabs(['Automatic player projections','Upcoming games (automatic)','Single-market calculator','Multi-book CSV scanner','Model roadmap'])
+with tabp:
+    st.subheader('Pregame player projections — experimental')
+    st.warning('These are recent-game weighted averages, NOT calibrated probabilities, picks, or verified betting edges. Anytime touchdown rows show a recent-game scoring frequency (0 to 1), NOT a validated probability. Passing TDs are excluded. Missing box-score rows, injuries, starting status, and sportsbook lines are not accounted for.')
+    league = st.selectbox('Sport', ['NBA', 'NFL'], key='projection_league')
+    @st.cache_data(ttl=3600, show_spinner=False)
+    def cached_projections(sport):
+        games = upcoming_games(sport)
+        return games, projections(sport, games)
+    if st.button('Load automatic projections', type='primary'):
+        try:
+            with st.spinner('Retrieving recent box scores and calculating projections...'):
+                games, estimates = cached_projections(league)
+            st.write(f'Upcoming games found: {len(games)}')
+            if estimates:
+                st.dataframe(estimates, use_container_width=True, hide_index=True)
+                st.caption('Projection = weighted average of up to five recently available game box scores. Sample coverage can be incomplete; missing games or injured players may bias results. Refresh cache every hour.')
+            else:
+                st.info('No eligible recent player box scores found for upcoming teams. This is not a zero projection.')
+        except Exception as exc:
+            st.error(f'Unable to load projections: {exc}')
 with tab0:
     st.subheader('Automatic pregame schedule')
     st.info('This is the first data-automation milestone: upcoming games only. Player prop predictions are NOT generated yet. This public feed may change or be unavailable.')
