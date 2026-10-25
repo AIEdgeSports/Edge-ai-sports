@@ -24,9 +24,27 @@ def _recent_events(sport):
     category, league, days = LEAGUES[sport]
     today = datetime.now(timezone.utc).date()
     start = today - timedelta(days=days)
-    url = f"https://site.api.espn.com/apis/site/v2/sports/{category}/{league}/scoreboard?dates={start:%Y%m%d}-{today:%Y%m%d}&limit=300"
-    data = _json(url)
-    events = [e for e in data.get("events", []) if (e.get("status") or {}).get("type", {}).get("state") == "post"]
+    base = f"https://site.api.espn.com/apis/site/v2/sports/{category}/{league}/scoreboard"
+    # Query one day at a time; long-range scoreboard requests can return HTTP 400.
+    # For NFL, sample the past 35 days to limit public API traffic.
+    lookback = min(days, 35)
+    dates = [today - timedelta(days=i) for i in range(1, lookback + 1)]
+    def fetch_day(day):
+        return _json(f"{base}?dates={day:%Y%m%d}&limit=100").get("events", [])
+    events_by_id = {}
+    failures = []
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        jobs = {pool.submit(fetch_day, day): day for day in dates}
+        for job in as_completed(jobs):
+            try:
+                for event in job.result():
+                    if (event.get("status") or {}).get("type", {}).get("state") == "post":
+                        events_by_id[event["id"]] = event
+            except Exception as exc:
+                failures.append(str(exc))
+    if not events_by_id and failures:
+        raise RuntimeError(f"Historical game provider failed for {sport}: {failures[0]}")
+    events = list(events_by_id.values())
     return sorted(events, key=lambda e: e.get("date", ""), reverse=True)
 
 def _boxscore(sport, event_id):
