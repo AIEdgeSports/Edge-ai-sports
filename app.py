@@ -1,0 +1,61 @@
+import csv
+import io
+import streamlit as st
+from engine import market_probability, implied_probability, expected_value, devig_two_way
+
+st.set_page_config(page_title='EDGE AI | Probability Lab', page_icon='📈', layout='wide')
+st.title('EDGE AI — Probability Lab')
+st.caption('v0.1 | Transparent statistical baseline • NOT trained, calibrated, or validated • No live odds feed')
+st.warning('Model probabilities depend entirely on the mean and uncertainty you supply. Positive EV is not a verified betting edge until projections are validated on unseen games.')
+
+tab1, tab2, tab3 = st.tabs(['Single-market calculator','Multi-book CSV scanner','Model roadmap'])
+with tab1:
+    c1,c2,c3=st.columns(3)
+    sport=c1.selectbox('Sport',['NBA','NFL','MLB','Other'])
+    market=c2.selectbox('Market',['player_prop','moneyline','spread','total'])
+    distribution=c3.selectbox('Distribution',['Normal','Poisson'],help='Poisson works for nonnegative count props/totals only')
+    name=st.text_input('Market description','Example: Player points')
+    a,b,c,d=st.columns(4)
+    side=a.selectbox('Selection',['over','under'],help='Moneyline: over=home, under=away. Spread: over=home covers, under=away covers.')
+    line=b.number_input('Line (home spread for spreads)',value=24.5,step=0.5)
+    mean=c.number_input('Your projected mean',value=25.0,step=0.5)
+    sd=d.number_input('Projected standard deviation',value=6.0,min_value=0.01,step=0.5,disabled=(distribution=='Poisson'))
+    odds=st.number_input('Sportsbook American odds',value=-110,step=5)
+    if st.button('Calculate',type='primary'):
+        try:
+            p=market_probability(market,side,line,mean,sd,distribution)
+            cols=st.columns(3)
+            cols[0].metric('Model probability',f'{p:.1%}')
+            cols[1].metric('Book implied probability',f'{implied_probability(odds):.1%}')
+            cols[2].metric('Expected return per $1 staked',f'{expected_value(p,odds):+.1%}')
+            st.caption('These are conditional outputs of the assumptions above, not evidence of predictive accuracy.')
+        except ValueError as exc: st.error(str(exc))
+with tab2:
+    st.write('Upload a CSV with one row per sportsbook selection. Required columns: sport, market, selection, line, mean, sd, distribution, sportsbook, odds. Optional: event, player. All rows use YOUR assumed projections.')
+    upload=st.file_uploader('Upload odds CSV',type='csv')
+    if upload:
+        try:
+            rows=list(csv.DictReader(io.StringIO(upload.getvalue().decode('utf-8-sig'))))
+            out=[]
+            for r in rows:
+                try:
+                    p=market_probability(r['market'],r['selection'],float(r['line']),float(r['mean']),float(r['sd']),r['distribution'])
+                    out.append({**r,'model_probability':round(p,4),'implied_probability':round(implied_probability(int(r['odds'])),4),'expected_return':round(expected_value(p,int(r['odds'])),4)})
+                except (ValueError,KeyError,ZeroDivisionError) as exc:
+                    st.warning(f'Skipped row: {exc}')
+            out.sort(key=lambda r:r['expected_return'],reverse=True)
+            st.dataframe(out,use_container_width=True)
+            if out:
+                buf=io.StringIO(); writer=csv.DictWriter(buf,fieldnames=out[0].keys());writer.writeheader();writer.writerows(out)
+                st.download_button('Download ranked results',buf.getvalue(),'edge_ai_ranked.csv','text/csv')
+        except Exception as exc: st.error(f'Could not parse CSV: {exc}')
+with tab3:
+    st.markdown('''**Next milestones**\n\n1. Import timestamped historical games and prop outcomes, with injury/lineup information available before tipoff.\n2. Train separate sport/market models using walk-forward time splits.\n3. Evaluate Brier score, log loss, calibration curves, and results against no-vig sportsbook baselines.\n4. Add legal, reliable odds feeds and scheduled updates, then track closing-line value.\n5. Implement authentication, subscription billing, and data-provider/commercial licensing checks.\n\n**Market conventions:** Moneyline `over` = home win; `under` = away win. Spread `over` = home margin exceeds negative home spread. Integer-line pushes in Normal are approximated as zero probability; Poisson count pushes are removed conditionally.\n''')
+    st.write('Two-way proportional no-vig calculator')
+    x,y=st.columns(2)
+    home=x.number_input('Side A odds',value=-110,key='h')
+    away=y.number_input('Side B odds',value=-110,key='a')
+    try:
+        pa,pb=devig_two_way(home,away)
+        st.write(f'No-vig implied probabilities: A {pa:.2%}, B {pb:.2%}')
+    except ValueError as exc:st.error(str(exc))
