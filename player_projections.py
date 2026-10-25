@@ -64,9 +64,9 @@ def _parse(sport, summary):
                     if "passing" in group_name:
                         markets = [("YDS", "Passing yards")]
                     elif "rushing" in group_name:
-                        markets = [("YDS", "Rushing yards")]
+                        markets = [("YDS", "Rushing yards"), ("TD", "Anytime touchdown (rushing/receiving)")]
                     elif "receiving" in group_name:
-                        markets = [("YDS", "Receiving yards"), ("REC", "Receptions")]
+                        markets = [("YDS", "Receiving yards"), ("REC", "Receptions"), ("TD", "Anytime touchdown (rushing/receiving)")]
                     else:
                         markets = []
                     for key, market in markets:
@@ -97,11 +97,15 @@ def projections(sport, upcoming, max_events=24):
                 game_date = event.get("date", "")
                 for team, name, market, value in _parse(sport, job.result()):
                     if team in team_names:
-                        history[(team, name, market)].append((game_date, value))
+                        history[(team, name, market, game_date)].append(value)
             except Exception:
                 continue
+    combined = defaultdict(list)
+    for (team, name, market, game_date), values in history.items():
+        # Rush + receiving TDs are additive; other markets have one group per game.
+        combined[(team, name, market)].append((game_date, sum(values)))
     rows = []
-    for (team, name, market), samples in history.items():
+    for (team, name, market), samples in combined.items():
         samples.sort(reverse=True)
         values = [value for _, value in samples[:5]]
         if len(values) < 2:
@@ -109,7 +113,13 @@ def projections(sport, upcoming, max_events=24):
         # Recency-weighted mean. Not a calibrated betting probability.
         weights = [0.75 ** i for i in range(len(values))]
         projected = sum(v*w for v, w in zip(values, weights)) / sum(weights)
-        rows.append({"Team": team, "Player": name, "Market": market,
-                     "Projection": round(projected, 1), "Games sampled": len(values),
-                     "Last game": samples[0][0][:10]})
+        row = {"Team": team, "Player": name, "Market": market,
+               "Projection": round(projected, 1), "Games sampled": len(values),
+               "Last game": samples[0][0][:10]}
+        if market.startswith("Anytime touchdown"):
+            # Observed scoring frequency is NOT a calibrated probability.
+            # Only games with an available rush/receiving stat row are counted.
+            row["Recent TD game rate"] = f"{sum(v >= 1 for v in values)}/{len(values)}"
+            row["Projection"] = round(sum((v >= 1)*w for v, w in zip(values, weights)) / sum(weights), 3)
+        rows.append(row)
     return sorted(rows, key=lambda r: (r["Team"], r["Player"], r["Market"]))
