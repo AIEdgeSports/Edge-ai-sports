@@ -13,7 +13,7 @@ st.warning('Model probabilities depend entirely on the mean and uncertainty you 
 tabp, tab0, tab1, tab2, tab3 = st.tabs(['Automatic player projections','Upcoming games (automatic)','Single-market calculator','Multi-book CSV scanner','Model roadmap'])
 with tabp:
     st.subheader('Pregame player projections — experimental')
-    st.warning('These are recent-game weighted averages, NOT calibrated probabilities, picks, or verified betting edges. Injuries, starting status, and sportsbook lines are not accounted for.')
+    st.warning('These are recent-game weighted averages, NOT calibrated probabilities, picks, or verified betting edges. Anytime touchdown rows show a recent-game scoring frequency (0 to 1), NOT a validated probability. Passing TDs are excluded. Missing box-score rows, injuries, starting status, and sportsbook lines are not accounted for.')
     league = st.selectbox('Sport', ['NBA', 'NFL'], key='projection_league')
     @st.cache_data(ttl=3600, show_spinner=False)
     def cached_projections(sport):
